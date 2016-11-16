@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+
+'''
+Leland Batey
+
+'''
+
+import tkinter as tk
+
+
+class CellArray(object):
+    '''
+    Class CellArray contains a two-dimensional array of cells, implementing the
+    behavior of John Conways game of Life.
+
+    The array of cells in meant to be zero indexed in the upper-left corner of
+    a screen.
+    '''
+    def __init__(self, height=20, width=20):
+        self.height = height
+        self.width = width
+        self.board = [[0 for _ in range(0, height)] for _ in range(0, width)]
+        self.xrnge = list(range(self.width))
+        self.yrnge = list(range(self.height))
+
+    def set(self, x, y, val):
+        self.board[x][y] = val
+
+    def neighbors(self, x, y):
+        '''
+        Method neighbors returns the number of living neighbors for a cell.
+        '''
+        deltas = [
+            (0, -1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
+        ]
+        rv = 0
+        for dx, dy in deltas:
+            # Apply our delta to the provided x, y to get the absolute indices
+            # for this delta
+            nx, ny = x+dx, y+dy
+            if nx in self.xrnge and ny in self.yrnge:
+                rv += self.board[nx][ny]
+        return rv
+
+    def step(self):
+        '''
+        Method step iterates across all cells and calculate what each cell's
+        new value should be. Then, it applies all newly calculate cell values.
+        '''
+        newvals = dict()
+        for h in range(self.height):
+            for w in range(self.width):
+                cell = self.board[w][h]
+                living = self.neighbors(w, h)
+                # If our cell's alive, check if it dies
+                if cell:
+                    if living < 2:
+                        newvals[(w, h)] = 0
+                    elif living > 3:
+                        newvals[(w, h)] = 0
+                # If our cell's dead, check if it becomes alive
+                else:
+                    if living == 3:
+                        newvals[(w, h)] = 1
+        for (x, y), val in newvals.items():
+            self.set(x, y, val)
+        return newvals
+
+
+
+class CellCanvas(tk.Canvas):
+    def __init__(self, parent, *args, **kwargs):
+        self.cwidth = kwargs['cwidth']
+        del kwargs['cwidth']
+        self.cheight = kwargs['cheight']
+        del kwargs['cheight']
+        self.root = parent
+        super().__init__(parent, *args, **kwargs)
+
+        self.itertime = 50
+        self.running = False
+
+        self.height = self.winfo_reqheight()
+        self.width = self.winfo_reqwidth()
+        self.cellarray = CellArray(height=self.cheight, width=self.cwidth)
+
+        self._drawmap = dict()
+
+        # Initialize a dictionary of locations to rectangles in the canvas
+        for h in range(self.cheight):
+            for w in range(self.cwidth):
+                (tx, ty), (bx, by) = self.cell_canvas_corners(w, h)
+                rect_id = self.create_rectangle(tx, ty, bx, by, fill='')
+                self._drawmap[(w, h)] = rect_id
+        self.tick()
+
+    def point_cell(self, x, y):
+        '''
+        Method point_cell accepts the x, y of a point on this Canvas and
+        returns the cell in self.cellarray which cooresponds to that point.
+        '''
+        cell_dispwidth = self.width / float(self.cwidth)
+        cell_dispheight = self.height / float(self.cheight)
+        cx = int(x / cell_dispwidth)
+        cy = int(y / cell_dispheight)
+        return cx, cy
+
+    def cell_canvas_corners(self, cx, cy):
+        '''
+        Method cell_canvas_corners accepts the x, y indices of a cell and
+        returns the indices of two points on the canvas which may be used to
+        draw a box representing that cell.
+        '''
+        cell_dispwidth = self.width / float(self.cwidth)
+        cell_dispheight = self.height / float(self.cheight)
+        x = cell_dispwidth * cx
+        y = cell_dispwidth * cy
+        return (x, y), (x + cell_dispwidth, y + cell_dispheight)
+
+    def set_cell(self, x, y, val):
+        cx, cy = self.point_cell(x, y)
+        rect_id = self._drawmap[(cx, cy)]
+
+        if val:
+            self.cellarray.set(cx, cy, 1)
+            self.itemconfig(rect_id, fill='black')
+        else:
+            self.cellarray.set(cx, cy, 0)
+            self.itemconfig(rect_id, fill='')
+    def tick(self):
+        if not self.running:
+            return
+        self.step()
+        self.root.after(self.itertime, self.tick)
+
+    def step(self):
+        newvals = self.cellarray.step()
+        for x, y in newvals.keys():
+            cell = self.cellarray.board[x][y]
+            rect_id = self._drawmap[(x, y)]
+            color = ''
+            if cell:
+                color = 'black'
+            self.itemconfig(rect_id, fill=color)
+
+    def clicked(self, event):
+        '''
+        Method clicked handles click events on the canvas.
+        '''
+        x, y = event.x, event.y
+        cx, cy = self.point_cell(x, y)
+        self.set_cell(x, y, not self.cellarray.board[cx][cy])
+
+class RunBtn(tk.Button):
+    '''
+    A button to control whether we're constantly running or not
+    '''
+    def __init__(self, parent, canvas, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.canvas = canvas
+
+    def clicked(self):
+        if self.canvas.running:
+            self.config(text="Run")
+            self.canvas.running = False
+        else:
+            self.config(text="Stop")
+            self.canvas.running = True
+            self.canvas.tick()
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    canv = CellCanvas(
+        root, cheight=30, cwidth=30, height=500, width=500, bg='gray90')
+    canv.pack()
+    canv.bind('<Button-1>', canv.clicked)
+
+    stepbtn = tk.Button(root, text='Step', command=canv.step)
+    runbtn = RunBtn(root, canv, text='Run')
+    runbtn.config(command=runbtn.clicked)
+    stepbtn.pack()
+    runbtn.pack()
+
+    # Might do something with the below
+    # canv.bind('<B1-Motion>', canv.clicked)
+    root.title('Game of Life')
+    root.mainloop()
